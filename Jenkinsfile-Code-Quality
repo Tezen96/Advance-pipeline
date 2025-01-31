@@ -18,7 +18,12 @@ pipeline {
         }            
         stage('Setup') {
             steps {
-                sh "poetry install"
+                sh '''
+                  # Install Poetry and add to PATH
+                    curl -sSL https://install.python-poetry.org | python3 -
+                    export PATH="/var/lib/jenkins/.local/bin:$PATH"
+                    poetry install
+                '''
             }
         }
 
