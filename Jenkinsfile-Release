@@ -96,24 +96,24 @@ pipeline {
                     }
                 }
 
-                stage('Deploy') {
+                stage('Deploy to k8s') {
                     steps {
                        sh '''
-                            kubectl apply -f deployment.yaml
-                            kubectl apply -f service.yaml
+                         kubectl apply -f deployment.yaml
+                         kubectl apply -f service.yaml
                         '''
         
-                         // Update the deployment with the new image tag
-                        sh "kubectl set image deployment/flask-app flask-app=${IMAGE_TAG}"
+        // Update the deployment with the new image tags
+        sh "kubectl set image deployment/flask-app flask-app=${IMAGE_TAG}"
         
-                            // Wait for rollout to complete
-                        sh 'kubectl rollout status deployment/flask-app'
+        // Wait for rollout to complete
+        sh 'kubectl rollout status deployment/flask-app'
         
-                        // Get quick status overview
-                         sh '''
-                         kubectl get deployment flask-app
-                         kubectl get service flask-app-service
-                        '''
+        // Get quick status overview
+        sh '''
+            kubectl get deployment flask-app
+            kubectl get service flask-app-service
+        '''
                     }
                 }
             }
