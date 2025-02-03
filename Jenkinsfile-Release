@@ -8,22 +8,15 @@ pipeline {
         AWS_ACCESS_KEY_ID = credentials('aws-access-key')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-key')
         GH_TOKEN = credentials('github')
+        POETRY_HOME = "/var/lib/jenkins/.local"
     }
 
-
-
     stages {
-
         stage("Check for Git Tag") {
             steps {
                 script {
                     def tag = sh(returnStdout: true, script: "git tag --contains").trim()
-
-                    if (tag != null) {
-                        env.GIT_TAG = tag
-                    } else {
-                        env.GIT_TAG = ''
-                    }
+                    env.GIT_TAG = tag ?: ''
                     echo "GIT_TAG is set to: ${env.GIT_TAG}"
                     env.IMAGE_TAG_RELEASE = "${IMAGE_NAME}:${GIT_TAG}"
                 }
@@ -34,53 +27,55 @@ pipeline {
             steps {
                 script {
                     sh '''
-                  # Install Poetry and add to PATH
-                    curl -sSL https://install.python-poetry.org | python3 -
-                    export PATH="/var/lib/jenkins/.local/bin:$PATH"
-                    poetry install --no-root
-                '''
+                        # Install Poetry
+                        curl -sSL https://install.python-poetry.org | POETRY_HOME=$POETRY_HOME python3 -
+                        
+                        # Add poetry to PATH and install dependencies
+                        export PATH="$POETRY_HOME/bin:$PATH"
+                        poetry install --no-root
+                    '''
                 }
             }
         }
 
         stage('Create Release') {
             when {
-                expression {
-                    return env.GIT_TAG == "" // Only run if GIT_TAG is not set
-                }
+                expression { return env.GIT_TAG == "" }
             }
             steps {
                 script {
-                    
-                    sh 'printenv'
-                    def tag = sh(returnStdout: true, script: "poetry run semantic-release version").trim()
-                    echo "${tag}"
-
-                    sh "poetry run semantic-release publish"
-
-
-                    echo "Published new tag: ${tag}"
+                    sh '''
+                        # Ensure poetry is in PATH
+                        export PATH="$POETRY_HOME/bin:$PATH"
+                        
+                        # Debug: Check poetry installation
+                        echo "Poetry version:"
+                        poetry --version
+                        
+                        # Run semantic release
+                        poetry run semantic-release version
+                        poetry run semantic-release publish
+                    '''
                 }
             }
         }
 
-
         stage("Build and Deploy") {
             when {
-                expression {
-                    return env.GIT_TAG != "" // Only run if GIT_TAG is not empty
-                }
+                expression { return env.GIT_TAG != "" }
             }
-
             stages {
-
                 stage('Docker Login') {
                     steps {
-                        withCredentials([usernamePassword(credentialsId: 'docker-creds', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
-                        sh 'echo ${PASSWORD} | docker login -u ${USERNAME} --password-stdin'}
-                        echo 'Login successfully'
+                        withCredentials([usernamePassword(credentialsId: 'docker-creds', 
+                                      usernameVariable: 'USERNAME', 
+                                      passwordVariable: 'PASSWORD')]) {
+                            sh 'echo ${PASSWORD} | docker login -u ${USERNAME} --password-stdin'
+                            echo 'Login successfully'
+                        }
                     }
                 }
+                
                 stage('Build') {
                     steps {
                         sh 'docker build -t ${IMAGE_TAG} -t ${IMAGE_TAG_RELEASE} .'
@@ -96,29 +91,20 @@ pipeline {
                     }
                 }
 
-                stage('Deploy to k8s') {
+                stage('Deploy to kubenrenties') {
                     steps {
-                       sh '''
-                         kubectl apply -f deployment.yaml
-                         kubectl apply -f service.yaml
+                        sh '''
+                            kubectl apply -f deployment.yaml
+                            kubectl apply -f service.yaml
+                            kubectl set image deployment/flask-app flask-app=${IMAGE_TAG}
+                            kubectl rollout status deployment/flask-app
+                            
+                            kubectl get deployment flask-app
+                            kubectl get service flask-app-service
                         '''
-        
-        // Update the deployment with the new image tags
-        sh "kubectl set image deployment/flask-app flask-app=${IMAGE_TAG}"
-        
-        // Wait for rollout to complete
-        sh 'kubectl rollout status deployment/flask-app'
-        
-        // Get quick status overview
-        sh '''
-            kubectl get deployment flask-app
-            kubectl get service flask-app-service
-        '''
                     }
                 }
             }
         }
-
     }
-
 }
