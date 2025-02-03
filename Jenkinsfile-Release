@@ -91,7 +91,7 @@ pipeline {
                     }
                 }
 
-                stage('Deploy to k8s') {
+                stage('Deploy to kubenrenties') {
                     steps {
                         sh '''
                             kubectl apply -f deployment.yaml
